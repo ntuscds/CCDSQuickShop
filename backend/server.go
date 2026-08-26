@@ -351,33 +351,29 @@ func (s *Server) completeAuth(w http.ResponseWriter, req *http.Request) error {
 
 func (s *Server) validAdminUser(ctx context.Context, email string) (bool, error) {
 	for range 5 {
-		ok := false
 		tx, err := s.DB.Begin()
 		if err != nil {
 			return false, fmt.Errorf("cannot start transaction: %w", err)
 		}
-		defer func() {
-			if !ok {
-				_ = tx.Rollback()
-			}
-		}()
 		queries := s.Queries.WithTx(tx)
 		count, err := queries.CountAdminUsers(ctx)
 		if err != nil {
+			_ = tx.Rollback()
 			return false, fmt.Errorf("cannot count admin users: %w", err)
 		}
 		if count == 0 {
 			// Auto-create first admin user.
 			if err := queries.CreateAdminUser(ctx, email); err != nil {
+				_ = tx.Rollback()
 				return false, fmt.Errorf("cannot auto-create admin user: %w", err)
 			}
 		}
 		_, authErr := queries.AuthAdminUser(ctx, email)
 		if err := tx.Commit(); err != nil {
-			slog.Warn("error commiting validAdminUser: %w", "err", err)
+			_ = tx.Rollback()
+			slog.Warn("error commiting validAdminUser", "err", err)
 			continue
 		}
-		ok = true
 		switch {
 		case errors.Is(authErr, sql.ErrNoRows):
 			return false, nil

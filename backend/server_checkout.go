@@ -260,8 +260,10 @@ func (s *Server) Checkout(w http.ResponseWriter, req *http.Request) {
 		if err := queries.CreateOrder(ctx, order); err != nil {
 			// Try a different order ID.
 			slog.Error("error creating order", "err", err)
+			_ = tx.Rollback()
 			continue
 		}
+		itemFailed := false
 		for _, item := range items {
 			if err := queries.CreateOrderItem(ctx, db.CreateOrderItemParams{
 				OrderID:     orderID,
@@ -273,12 +275,18 @@ func (s *Server) Checkout(w http.ResponseWriter, req *http.Request) {
 				Variant:     item.Variant,
 			}); err != nil {
 				slog.Error("error creating order item", "err", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
+				_ = tx.Rollback()
+				itemFailed = true
+				break
 			}
+		}
+		if itemFailed {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
 		}
 		if err := tx.Commit(); err != nil {
 			slog.Error("error commiting order", "err", err)
+			_ = tx.Rollback()
 			continue
 		}
 		var redirectURL string
