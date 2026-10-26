@@ -36,8 +36,12 @@
 	const hasAddons = $derived(
 		item.variants.some((v) => v.options.some((o) => (o.additionalPrice ?? 0) !== 0))
 	)
+	// Option groups may have been saved without a name.
+	const typeLabel = (type: string) => type || 'Option'
 	const optionSummary = $derived(
-		item.variants.map((v) => pluralise(v.options.length, v.type.toLowerCase())).join(' · ')
+		item.variants
+			.map((v) => pluralise(v.options.length, typeLabel(v.type).toLowerCase()))
+			.join(' · ')
 	)
 	const arrayVariant = $derived(toArrayVariant(item, chosen))
 	const complete = $derived(arrayVariant.every((x) => !!x))
@@ -156,20 +160,23 @@
 					{@const errorId = `${bodyId}-${variant.type}-error`}
 					<div class="flex flex-col gap-2">
 						<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-							<span class="ds-label">{variant.type}</span>
+							<span class="ds-label">{typeLabel(variant.type)}</span>
 							{#if variant.chart_url}
 								<Button
 									appearance="link"
 									onClick={() =>
-										(chart = { title: `${variant.type} chart`, url: variant.chart_url! })}
+										(chart = {
+											title: `${typeLabel(variant.type)} chart`,
+											url: variant.chart_url!
+										})}
 								>
 									{#snippet iconBefore()}<Icon name="photo" class="size-4" />{/snippet}
-									{variant.type} chart
+									{typeLabel(variant.type)} chart
 								</Button>
 							{/if}
 						</div>
 						<ChoiceChips
-							label={variant.type}
+							label={typeLabel(variant.type)}
 							options={choicesFor(variant)}
 							bind:value={chosen[variant.type]}
 							onPreview={setPreview(variant.type)}
@@ -179,7 +186,7 @@
 						{#if missing === variant.type}
 							<p id={errorId} class="ds-message is-error" role="alert">
 								<Icon name="exclamation-circle" class="size-4" />
-								<span>Choose a {variant.type.toLowerCase()} to continue.</span>
+								<span>Choose a {typeLabel(variant.type).toLowerCase()} to continue.</span>
 							</p>
 						{/if}
 					</div>

@@ -68,7 +68,9 @@
 	}
 
 	const optionSummary = (item: ShopItem) =>
-		item.variants.map((v) => pluralise(v.options.length, v.type.toLowerCase())).join(' · ')
+		item.variants
+			.map((v) => pluralise(v.options.length, (v.type || 'option').toLowerCase()))
+			.join(' · ')
 </script>
 
 <svelte:head><title>Products - Admin</title></svelte:head>

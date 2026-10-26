@@ -227,7 +227,18 @@ WHERE
 			order_items
 		WHERE
 			order_items.order_id = orders.order_id
-			AND order_items.product_name = @product_name COLLATE NOCASE
+			AND (
+				order_items.product_name = @product_name COLLATE NOCASE
+				OR EXISTS(
+					SELECT
+						1
+					FROM
+						products
+					WHERE
+						products.product_id = order_items.product_id
+						AND products.name = @product_name COLLATE NOCASE
+				)
+			)
 			AND order_items.variant = @variant COLLATE NOCASE
 	)
 	AND orders.payment_time IS NOT NULL
@@ -235,11 +246,14 @@ WHERE
 
 -- name: OrderSummary :many
 SELECT
-	order_items.product_id, order_items.product_name, order_items.variant,
+	order_items.product_id,
+	CAST(COALESCE(products.name, order_items.product_name) AS TEXT) AS product_name,
+	order_items.variant,
 	SUM(order_items.amount)
 FROM
 	orders
 	JOIN order_items ON orders.order_id = order_items.order_id
+	LEFT JOIN products ON products.product_id = order_items.product_id
 WHERE
 	(
 		orders.collection_time IS NULL
@@ -249,7 +263,7 @@ WHERE
 	AND orders.cancelled = FALSE
 	AND orders.sale_period = ?
 GROUP BY
-	order_items.product_id, order_items.product_name, order_items.variant;
+	order_items.product_id, COALESCE(products.name, order_items.product_name), order_items.variant;
 
 -- name: OrderNumberStats :many
 SELECT
@@ -392,10 +406,12 @@ WHERE
 -- name: CollectedOrderItems :many
 SELECT
 	orders.order_id, orders.collection_time,
-	order_items.product_name, order_items.variant, order_items.amount
+	CAST(COALESCE(products.name, order_items.product_name) AS TEXT) AS product_name,
+	order_items.variant, order_items.amount
 FROM
 	orders
 	JOIN order_items ON orders.order_id = order_items.order_id
+	LEFT JOIN products ON products.product_id = order_items.product_id
 WHERE
 	orders.collection_time IS NOT NULL
 	AND orders.payment_time IS NOT NULL

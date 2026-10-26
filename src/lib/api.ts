@@ -294,7 +294,9 @@ const StockCountEntry = z.object({
 	opening: z.number().nullable(),
 	closing: z.number().nullable(),
 	collected: z.number(),
-	previous_closing: z.number().nullable()
+	previous_closing: z.number().nullable(),
+	ordered: z.number(),
+	collected_before: z.number()
 })
 const StockCounts = z.object({
 	date: z.string(),

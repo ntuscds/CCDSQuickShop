@@ -41,8 +41,10 @@
 		window.localStorage.setItem(HISTORY_KEY, JSON.stringify(pastSearches))
 	}
 	const search = async (keyword = query) => {
-		const q = normaliseOrderQuery(keyword)
-		if (!q) {
+		// "Product, Variant" phrases (from the summary pages) must be passed through
+		// untouched: a product without options ends in ", " which the backend needs.
+		const q = keyword.includes(', ') ? keyword : normaliseOrderQuery(keyword)
+		if (!q.trim()) {
 			field?.focus()
 			return
 		}

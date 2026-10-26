@@ -60,6 +60,10 @@ type StockCountEntry struct {
 	Closing         *int   `json:"closing"`
 	Collected       int    `json:"collected"`
 	PreviousClosing *int   `json:"previous_closing"`
+	// Total items in paid orders and how many were collected on earlier days;
+	// their difference is the stock expected at the start of the day.
+	Ordered         int `json:"ordered"`
+	CollectedBefore int `json:"collected_before"`
 }
 
 type StockCountResponse struct {
@@ -193,7 +197,7 @@ func (s *Server) stockCountEntries(ctx context.Context, salePeriod int64, date s
 		return nil, fmt.Errorf("error fetching sold items: %w", err)
 	}
 	for _, item := range sold {
-		entryFor(item.ProductName, item.Variant)
+		entryFor(item.ProductName, item.Variant).Ordered = int(item.Sum.Float64)
 	}
 
 	days, err := s.collectionDays(ctx, salePeriod, loc)
@@ -201,11 +205,15 @@ func (s *Server) stockCountEntries(ctx context.Context, salePeriod int64, date s
 		return nil, err
 	}
 	for _, day := range days {
-		if day.Date != date {
-			continue
-		}
-		for _, item := range day.Items {
-			entryFor(item.Name, item.Variant).Collected = item.Count
+		switch {
+		case day.Date == date:
+			for _, item := range day.Items {
+				entryFor(item.Name, item.Variant).Collected = item.Count
+			}
+		case day.Date < date:
+			for _, item := range day.Items {
+				entryFor(item.Name, item.Variant).CollectedBefore += item.Count
+			}
 		}
 	}
 

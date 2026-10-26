@@ -15,11 +15,14 @@ const KEY = Symbol('admin')
 export const setAdminContext = (state: AdminState) => setContext(KEY, state)
 export const getAdminContext = () => getContext<AdminState>(KEY)
 
-// The sale period the storefront shows: the latest one that has started.
+// The sale period the storefront shows. Mirrors the backend, which compares
+// start times against today's date (UTC): a period counts once its start
+// date is before today.
 export const currentPeriodID = (periods: SalePeriod[]): string | undefined => {
-	const now = Date.now()
+	const today = new Date()
+	const startOfTodayUTC = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
 	const started = periods
-		.filter((p) => p.start_time.getTime() <= now)
+		.filter((p) => p.start_time.getTime() < startOfTodayUTC)
 		.sort((a, b) => b.start_time.getTime() - a.start_time.getTime())
 	return (started[0] ?? periods[periods.length - 1])?.id
 }

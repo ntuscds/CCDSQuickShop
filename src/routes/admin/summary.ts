@@ -110,12 +110,24 @@ const combineVariants = (
 	)
 
 const SORT_ORDER = ['3XS', '2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
-const variantSort = (a: string, b: string) => {
+export const variantSort = (a: string, b: string) => {
 	// Use SORT_ORDER if applicable to make sure size is in the right order.
 	const aIndex = SORT_ORDER.indexOf(a)
 	const bIndex = SORT_ORDER.indexOf(b)
 	if (aIndex === -1 || bIndex === -1) return a < b ? -1 : a === b ? 0 : 1
 	return aIndex - bIndex
+}
+
+// Orders "Product, Variant" labels by product, then by each variant part
+// (sizes in size order, everything else alphabetically).
+export const compareItemLabels = (a: string, b: string) => {
+	const aParts = a.split(',').map((x) => x.trim())
+	const bParts = b.split(',').map((x) => x.trim())
+	for (let i = 0; i < Math.min(aParts.length, bParts.length); i++) {
+		const res = variantSort(aParts[i], bParts[i])
+		if (res !== 0) return res
+	}
+	return aParts.length - bParts.length
 }
 
 const constructTable = (

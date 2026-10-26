@@ -15,6 +15,7 @@
 	import TextField from '$lib/ui/TextField.svelte'
 	import { addFlag } from '$lib/ui/flags.svelte'
 	import StatTile from './StatTile.svelte'
+	import { compareItemLabels } from './summary'
 
 	interface Props {
 		salePeriod: string
@@ -36,7 +37,7 @@
 		error = undefined
 		try {
 			const resp = await api.admin.sales(salePeriod).stockCounts(date)
-			entries = resp.entries
+			entries = sortEntries(resp.entries)
 			loadedDate = resp.date
 			dirty = false
 		} catch (e) {
@@ -81,7 +82,7 @@
 				loadedDate,
 				entries.map((x) => ({ ...x, opening: x.opening ?? null, closing: x.closing ?? null }))
 			)
-			entries = resp.entries
+			entries = sortEntries(resp.entries)
 			dirty = false
 			addFlag({ appearance: 'success', title: 'Stock counts saved', description: loadedDate })
 		} catch (e) {
@@ -91,11 +92,19 @@
 		}
 	}
 
-	const canFillOpening = $derived(
-		entries.some((x) => x.opening === null && x.previous_closing !== null)
-	)
+	// Rows are ordered by product, then by variant with sizes in size order.
+	const sortEntries = (list: StockCountEntry[]) =>
+		[...list].sort((a, b) =>
+			compareItemLabels(`${a.name}, ${a.variant}`, `${b.name}, ${b.variant}`)
+		)
+
+	// Stock expected at the start of the day: everything ordered that was not
+	// collected on an earlier day.
+	const expectedOpening = (x: StockCountEntry) => x.ordered - x.collected_before
+	const suggestedOpening = (x: StockCountEntry) => x.previous_closing ?? expectedOpening(x)
+	const canFillOpening = $derived(entries.some((x) => x.opening === null))
 	const fillOpening = () => {
-		entries = entries.map((x) => ({ ...x, opening: x.opening ?? x.previous_closing }))
+		entries = entries.map((x) => ({ ...x, opening: x.opening ?? suggestedOpening(x) }))
 		dirty = true
 	}
 	const markDirty = () => {
@@ -148,9 +157,7 @@
 		{#snippet iconBefore()}<Icon name="arrow-path" class="size-4" />{/snippet}
 		Reload
 	</Button>
-	<Button onClick={fillOpening} disabled={!canFillOpening}>
-		Fill opening from previous closing
-	</Button>
+	<Button onClick={fillOpening} disabled={!canFillOpening}>Fill empty opening counts</Button>
 </div>
 
 <ErrorBoundary {error} />
@@ -166,9 +173,11 @@
 {:else}
 	{#if completeEntries.length === 0}
 		<SectionMessage appearance="information">
-			Enter the opening and closing counts to compare them with the collected orders. Difference =
-			closing − (opening − collected). "Short" means items are missing; "Over" means more stock is
-			left than expected.
+			Enter the opening and closing counts to compare them with the collected orders. Expected
+			opening is the stock there should be at the start of the day (items ordered minus items
+			collected on earlier days); empty Opening fields are pre-filled with the previous day's
+			closing count, or the expected opening. Difference = closing − (opening − collected). "Short"
+			means items are missing; "Over" means more stock is left than expected.
 		</SectionMessage>
 	{:else if mismatchCount === 0}
 		<SectionMessage appearance="success">
@@ -198,6 +207,8 @@
 				<tr>
 					<th scope="col">Item</th>
 					<th scope="col">Variant</th>
+					<th scope="col" class="num">Ordered</th>
+					<th scope="col" class="num">Expected opening</th>
 					<th scope="col">Opening</th>
 					<th scope="col" class="num">Collected</th>
 					<th scope="col" class="num">Expected closing</th>
@@ -211,6 +222,8 @@
 					<tr>
 						<td class="whitespace-nowrap font-medium">{entry.name}</td>
 						<td class="whitespace-nowrap">{entry.variant}</td>
+						<td class="num">{entry.ordered}</td>
+						<td class="num">{expectedOpening(entry)}</td>
 						<td>
 							<NumberField
 								label={`Opening count for ${entry.name} ${entry.variant}`}
@@ -218,7 +231,7 @@
 								compact
 								min={0}
 								bind:value={entries[i].opening}
-								placeholder={entry.previous_closing === null ? '' : `${entry.previous_closing}`}
+								placeholder={`${suggestedOpening(entry)}`}
 								oninput={markDirty}
 								class="w-24"
 							/>

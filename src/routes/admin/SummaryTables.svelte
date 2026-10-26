@@ -28,7 +28,11 @@
 						<tr>
 							<th scope="col" class="ds-matrix-sticky"></th>
 							{#each colRow as col}
-								<th scope="col" colspan={col.span} class="text-center">{col.label}</th>
+								<th scope="col" colspan={col.span} class="text-center">
+									{#if col.label}{col.label}{:else}<span class="font-normal text-ink-subtlest"
+											>No option</span
+										>{/if}
+								</th>
 							{/each}
 						</tr>
 					{/each}
@@ -41,7 +45,7 @@
 							scope="row"
 							class="ds-matrix-sticky whitespace-nowrap text-left text-body font-semibold text-ink"
 						>
-							{row.label}
+							{row.label || 'No option'}
 						</th>
 						{#each row.data as num, i}
 							<td class="text-center tabular-nums">
