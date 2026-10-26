@@ -8,18 +8,31 @@ writing this README, the live implementation can be found
 ## Features
 
 - Customizable Merch and Coupons without Restarting
-- Simple Order Item Count Analytics
+- Simple Order Item Count Analytics, Daily Collection Summary and Stock Count
 - Automatic Store Opening and Closure (sale period scheduling)
 - Multiple Sale Periods ("seasons" of sales that are logically separate)
 - Integration with Stripe for Payment Confirmation
+- Order Lookup for Buyers and a Mobile-friendly Collection Booth Flow for Admins
+
+## Design
+
+The UI follows the [Atlassian Design System](https://atlassian.design/) (see
+`design.md`). Design tokens live in `tailwind.config.ts` and `src/app.css`,
+and the reusable components (buttons, fields, lozenges, dialogs, section
+messages, tabs, ...) are in `src/lib/ui/`. Pages are built from these
+components only, so new screens stay consistent.
+
+The admin console lives under `/admin/*` (one route per section, e.g.
+`/admin/collect`, `/admin/products`, `/admin/stock`) with a global sale period
+selector in the header.
 
 ## Screenshots
 
 ![](https://wenxu.dev/images/projects/CCDSQuickShop-User.png)
-*Storefront Page for Users*
+_Storefront Page for Users_
 
 ![](https://wenxu.dev/images/projects/CCDSQuickShop-Summary.png)
-*Order Summary Page for Admin*
+_Order Summary Page for Admin_
 
 ## Quick-Start
 

@@ -1,124 +1,197 @@
 <script lang="ts">
+	import { slide } from 'svelte/transition'
+	import { prefersReducedMotion } from 'svelte/motion'
 	import type { Order } from '$lib/api'
-	import { formatDate } from '$lib/util'
-	import Button from '$lib/Button.svelte'
-	import Icon from '$lib/icon/Icon.svelte'
+	import { applyCoupon, calculateCartTotal, formatPrice } from '$lib/cart'
+	import { formatFriendlyDate, pluralise } from '$lib/util'
+	import Button from '$lib/ui/Button.svelte'
+	import Icon from '$lib/ui/Icon.svelte'
+	import Lozenge from '$lib/ui/Lozenge.svelte'
+	import SectionMessage from '$lib/ui/SectionMessage.svelte'
 	import Invoice from '$lib/Invoice.svelte'
+	import { uid } from '$lib/ui/uid'
 
-	export let order: Order
-	export let expanded = false
-	export let userFacing = false
-	export let collect: (() => any) | null = null
-	export let cancel: (() => any) | null = null
-
-	let content: HTMLDivElement
-	const toggleExpanded = () => {
-		expanded = !expanded
+	interface Props {
+		order: Order
+		expanded?: boolean
+		userFacing?: boolean
+		onCollect?: () => unknown
+		onCancel?: () => unknown
 	}
+	let {
+		order,
+		expanded = $bindable(false),
+		userFacing = false,
+		onCollect,
+		onCancel
+	}: Props = $props()
 
-	$: maxHeight = expanded && content ? `${content.clientHeight}px` : '0px'
-	$: orderStatus =
+	type Status = 'collected' | 'cancelled' | 'pending' | 'confirmed'
+	const status = $derived<Status>(
 		order.collectionTime !== null
-			? ('COLLECTED' as const)
+			? 'collected'
 			: order.cancelled
-				? ('CANCELLED' as const)
+				? 'cancelled'
 				: order.paymentTime === null
-					? ('PAYMENT PENDING' as const)
-					: ('UNCOLLECTED' as const)
+					? 'pending'
+					: 'confirmed'
+	)
+	const lozengeAppearance: Record<Status, 'default' | 'removed' | 'moved' | 'success'> = {
+		collected: 'default',
+		cancelled: 'removed',
+		pending: 'moved',
+		confirmed: 'success'
+	}
+	const lozengeLabel = $derived(
+		{
+			collected: 'Collected',
+			cancelled: 'Cancelled',
+			pending: 'Payment pending',
+			confirmed: userFacing ? 'Confirmed' : 'Ready to collect'
+		}[status]
+	)
+	const itemCount = $derived(order.items.reduce((acc, x) => acc + x.amount, 0))
+	const subtotal = $derived(calculateCartTotal(order.items))
+	const total = $derived(
+		order.coupon ? Math.min(applyCoupon(order.items, order.coupon), subtotal) : subtotal
+	)
+	const muted = $derived(status === 'collected' || status === 'cancelled')
 
-	const pillColors = {
-		COLLECTED: 'bg-gray-400',
-		CANCELLED: 'bg-red-400',
-		'PAYMENT PENDING': 'bg-red-400',
-		UNCOLLECTED: null
-	} as const
-	const messages = {
-		COLLECTED: {
-			text: 'Your merch has been collected. Enjoy your merch!',
-			css: 'border-gray-400 bg-gray-100'
-		},
-		CANCELLED: {
-			text: 'Your order has been cancelled. This is likely due to non-payment.\nPlease contact SCDS Club if this is a mistake.',
-			css: 'border-red-400 bg-red-100'
-		},
-		'PAYMENT PENDING': {
-			text: 'We are waiting for confirmation from our payment provider.\nTry refreshing after a few moments if you have already paid.',
-			css: 'border-yellow-400 bg-yellow-100'
-		},
-		UNCOLLECTED: {
-			text: 'Your order has been confirmed!\nWe will send details on merch collection to your NTU email once they are ready.',
-			css: 'border-green-400 bg-green-100'
-		}
-	} as const
-
-	$: bgColor = orderStatus === 'UNCOLLECTED' ? 'bg-white' : 'bg-gray-200'
-	$: pillColor = pillColors[orderStatus]
-	$: message = messages[orderStatus]
+	const bodyId = uid('order')
+	const duration = $derived(prefersReducedMotion.current ? 0 : 200)
+	const mailto = $derived(
+		`mailto:scds-business@e.ntu.edu.sg?subject=${encodeURIComponent(`[Merch Shop] Order ${order.id}`)}`
+	)
 </script>
 
-<div class={`w-full shadow-md lg:w-1/2 ${bgColor}`}>
-	<button class="flex w-full items-center justify-between p-4" on:click={toggleExpanded}>
-		<div class="flex items-center gap-2 text-xl font-bold">
-			<span>Order {order.id}</span>
-			{#if pillColor && !userFacing}<span class={`pill ${pillColor}`}>{orderStatus}</span>{/if}
-		</div>
-		<div class="flex items-center gap-2">
-			<span class="italic text-gray-400">{order.salePeriod}</span>
-			<Icon name={expanded ? 'chevron-up' : 'chevron-down'} />
-		</div>
+<article class="ds-order" class:muted>
+	<button
+		type="button"
+		class="flex w-full items-start gap-3 p-4 text-left"
+		aria-expanded={expanded}
+		aria-controls={bodyId}
+		onclick={() => (expanded = !expanded)}
+	>
+		<span class="min-w-0 flex-1">
+			<span class="flex flex-wrap items-center gap-2">
+				<span class="text-h4">Order {order.id}</span>
+				<Lozenge appearance={lozengeAppearance[status]}>{lozengeLabel}</Lozenge>
+			</span>
+			<span class="mt-1 block text-small text-ink-subtle">
+				{pluralise(itemCount, 'item')} · S$ {formatPrice(total / 100)}
+				{#if !userFacing}· {order.name} · {order.matricNumber}{/if}
+				{#if order.paymentTime}· paid {formatFriendlyDate(order.paymentTime, false)}{/if}
+				· {order.salePeriod}
+			</span>
+		</span>
+		<Icon name={expanded ? 'chevron-up' : 'chevron-down'} class="size-5 text-ink-subtle" />
 	</button>
-	<div class="overflow-hidden bg-white transition-all" style:max-height={maxHeight}>
-		<hr />
-		<div class="flex flex-col gap-4 p-4" bind:this={content}>
+
+	{#if expanded}
+		<div
+			id={bodyId}
+			class="flex flex-col gap-4 border-t border-line p-4"
+			transition:slide={{ duration }}
+		>
 			{#if userFacing}
-				<div
-					class={`w-full whitespace-pre-wrap rounded-lg border px-4 py-2 text-justify ${message.css}`}
-				>
-					{message.text}
+				{#if status === 'confirmed'}
+					<SectionMessage appearance="success" title="Your order is confirmed">
+						Collection details will be sent to {order.email}. Show this order ID or your matric card
+						at the collection booth.
+					</SectionMessage>
+				{:else if status === 'pending'}
+					<SectionMessage appearance="warning" title="Waiting for payment confirmation">
+						We are waiting for confirmation from our payment provider. If you have already paid,
+						refresh this page after a few moments.
+						{#snippet actions()}
+							<Button appearance="link" onClick={() => window.location.reload()}>Refresh</Button>
+						{/snippet}
+					</SectionMessage>
+				{:else if status === 'collected'}
+					<SectionMessage appearance="information" title="Enjoy your merch!">
+						You collected this order on {formatFriendlyDate(order.collectionTime)}. Enjoy your
+						merch!
+					</SectionMessage>
+				{:else}
+					<SectionMessage appearance="error" title="This order was cancelled">
+						This is usually because payment was not completed. Contact SCDS Club if you think this
+						is a mistake.
+						{#snippet actions()}
+							<a href={mailto} class="ds-link">Contact us</a>
+						{/snippet}
+					</SectionMessage>
+				{/if}
+			{/if}
+
+			<dl class="ds-order-details">
+				<dt>Name</dt>
+				<dd>{order.name}</dd>
+				<dt>Matric number</dt>
+				<dd>{order.matricNumber}</dd>
+				{#if order.collectionTime}
+					<dt>Collected</dt>
+					<dd>{formatFriendlyDate(order.collectionTime)}</dd>
+				{/if}
+				{#if !userFacing}
+					<dt>Email</dt>
+					<dd>{order.email}</dd>
+				{/if}
+			</dl>
+
+			<Invoice items={order.items} coupon={order.coupon} />
+
+			<details class="group">
+				<summary class="ds-link inline-flex cursor-pointer list-none items-center gap-1">
+					<Icon name="chevron-right" class="size-4 transition-transform group-open:rotate-90" />
+					Payment details
+				</summary>
+				<dl class="ds-order-details mt-2">
+					<dt>Payment reference</dt>
+					<dd class="break-all">{order.paymentRef || 'N/A'}</dd>
+					<dt>Payment time</dt>
+					<dd>{formatFriendlyDate(order.paymentTime)}</dd>
+					{#if userFacing}
+						<dt>Email</dt>
+						<dd>{order.email}</dd>
+					{/if}
+					{#if order.coupon}
+						<dt>Coupon</dt>
+						<dd>{order.coupon.couponCode}</dd>
+					{/if}
+				</dl>
+			</details>
+
+			{#if (onCollect && order.collectionTime === null) || (onCancel && order.paymentTime === null && !order.cancelled)}
+				<div class="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+					{#if onCancel && order.paymentTime === null && !order.cancelled}
+						<Button appearance="subtle" onClick={onCancel}>Cancel order</Button>
+					{/if}
+					{#if onCollect && order.collectionTime === null}
+						<Button appearance="primary" onClick={onCollect}>
+							{#snippet iconBefore()}<Icon name="check" class="size-4" />{/snippet}
+							Mark as collected ({pluralise(itemCount, 'item')})
+						</Button>
+					{/if}
 				</div>
 			{/if}
-			<div class="grid grid-cols-2 gap-2 xl:grid-cols-3">
-				<div class="text-center">
-					<div class="font-bold">Name</div>
-					<div>{order.name}</div>
-				</div>
-				<div class="text-center">
-					<div class="font-bold">Matric Number</div>
-					<div>{order.matricNumber}</div>
-				</div>
-				<div class="text-center">
-					<div class="font-bold">Payment Ref</div>
-					<div>{order.paymentRef}</div>
-				</div>
-				<div class="text-center">
-					<div class="font-bold">Payment Time</div>
-					<div>{formatDate(order.paymentTime)}</div>
-				</div>
-				<div class="text-center">
-					<div class="font-bold">Collection Time</div>
-					<div>{formatDate(order.collectionTime)}</div>
-				</div>
-				<div class="text-center">
-					<div class="font-bold">Email</div>
-					<div>{order.email}</div>
-				</div>
-			</div>
-			<hr />
-			<Invoice bind:items={order.items} coupon={order.coupon} />
-			<div class="flex w-full justify-end gap-2">
-				{#if order.paymentTime === null && !order.cancelled && cancel}
-					<Button onClick={cancel}>Cancel</Button>
-				{/if}
-				{#if order.collectionTime === null && collect}
-					<Button onClick={collect}>Mark as Collected</Button>
-				{/if}
-			</div>
 		</div>
-	</div>
-</div>
+	{/if}
+</article>
 
 <style lang="postcss">
-	.pill {
-		@apply rounded-full px-2 py-1;
+	.ds-order {
+		@apply overflow-hidden rounded-ds-lg border border-line bg-surface-raised shadow-raised;
+	}
+	.ds-order.muted {
+		@apply bg-surface-sunken;
+	}
+	.ds-order-details {
+		@apply grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[auto,1fr];
+	}
+	.ds-order-details dt {
+		@apply text-small font-semibold text-ink-subtle sm:py-0.5;
+	}
+	.ds-order-details dd {
+		@apply mb-2 sm:mb-0 sm:py-0.5;
 	}
 </style>

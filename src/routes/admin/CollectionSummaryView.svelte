@@ -1,20 +1,29 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
+	import { goto } from '$app/navigation'
 	import api, { type CollectionDay } from '$lib/api'
-	import Button from '$lib/Button.svelte'
-	import ErrorBoundary from '$lib/ErrorBoundary.svelte'
+	import { pluralise } from '$lib/util'
+	import Button from '$lib/ui/Button.svelte'
+	import EmptyState from '$lib/ui/EmptyState.svelte'
+	import ErrorBoundary from '$lib/ui/ErrorBoundary.svelte'
+	import Icon from '$lib/ui/Icon.svelte'
+	import PageHeader from '$lib/ui/PageHeader.svelte'
+	import Spinner from '$lib/ui/Spinner.svelte'
+	import StatTile from './StatTile.svelte'
 	import SummaryTables from './SummaryTables.svelte'
 
 	interface Props {
-		searchOrder: (phrase: string) => void
 		salePeriod: string
 	}
-	const { salePeriod, searchOrder }: Props = $props()
+	const { salePeriod }: Props = $props()
 
-	let error: unknown = $state()
 	let days: CollectionDay[] = $state([])
 	let selectedDate: string | undefined = $state()
+	let loading = $state(true)
+	let error: unknown = $state()
 	const refresh = async () => {
+		loading = true
+		error = undefined
 		try {
 			days = await api.admin.sales(salePeriod).collectionSummary()
 			if (!days.some((x) => x.date === selectedDate)) {
@@ -22,6 +31,8 @@
 			}
 		} catch (e) {
 			error = e
+		} finally {
+			loading = false
 		}
 	}
 	onMount(refresh)
@@ -29,69 +40,99 @@
 	const selectedDay = $derived(days.find((x) => x.date === selectedDate))
 	const totalOrderCount = $derived(days.reduce((acc, x) => acc + x.order_count, 0))
 	const totalItemCount = $derived(days.reduce((acc, x) => acc + x.item_count, 0))
+	const searchOrder = (phrase: string) => goto(`/admin/collect?q=${encodeURIComponent(phrase)}`)
+	const friendly = (date: string) =>
+		new Date(`${date}T00:00:00`).toLocaleDateString('en-SG', {
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric'
+		})
 </script>
 
-<div class="flex flex-col gap-4">
-	<div class="flex items-center gap-4">
-		<Button onClick={refresh}>Refresh</Button>
+<svelte:head><title>Daily collection - Admin</title></svelte:head>
+
+<PageHeader
+	title="Daily collection"
+	description="Orders and items collected on each day of this sale period."
+>
+	{#snippet actions()}
+		<Button onClick={refresh} {loading}>
+			{#snippet iconBefore()}<Icon name="arrow-path" class="size-4" />{/snippet}
+			Refresh
+		</Button>
+	{/snippet}
+</PageHeader>
+
+<ErrorBoundary {error} />
+
+{#if loading && days.length === 0}
+	<div class="flex justify-center py-12"><Spinner size="large" /></div>
+{:else if days.length === 0}
+	<EmptyState
+		icon="calendar"
+		title="No collections yet"
+		description="Days appear here once orders are marked as collected."
+	/>
+{:else}
+	<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+		<StatTile label="Collection days" value={days.length} />
+		<StatTile label="Orders collected" value={totalOrderCount} />
+		<StatTile label="Items collected" value={totalItemCount} />
 	</div>
-	<ErrorBoundary {error} />
-	<div class="flex flex-col gap-1">
-		<h2 class="text-xl">Collected Items per Day</h2>
-		{#if days.length === 0}
-			No orders have been collected yet.
-		{:else}
-			<table class="w-fit border border-black text-center">
+
+	<div class="grid gap-4 lg:grid-cols-[320px,minmax(0,1fr)]">
+		<div class="ds-table-wrap self-start rounded-ds-lg border border-line bg-surface-raised">
+			<table class="ds-table">
+				<caption class="sr-only">Collection days</caption>
 				<thead>
 					<tr>
-						<th>Date</th>
-						<th>Orders</th>
-						<th>Items</th>
+						<th scope="col">Day</th>
+						<th scope="col" class="num">Orders</th>
+						<th scope="col" class="num">Items</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each days as day}
-						<tr
-							class="cursor-pointer odd:bg-gray-200"
-							class:selected={day.date === selectedDate}
-							onclick={() => (selectedDate = day.date)}
-						>
-							<td>{day.date}</td>
-							<td>{day.order_count}</td>
-							<td>{day.item_count}</td>
+					{#each days as day (day.date)}
+						<tr class:is-selected={day.date === selectedDate}>
+							<td>
+								<button
+									type="button"
+									class="ds-link text-left"
+									aria-pressed={day.date === selectedDate}
+									onclick={() => (selectedDate = day.date)}
+								>
+									{friendly(day.date)}
+								</button>
+							</td>
+							<td class="num">{day.order_count}</td>
+							<td class="num">{day.item_count}</td>
 						</tr>
 					{/each}
 				</tbody>
 				<tfoot>
-					<tr class="font-bold">
+					<tr>
 						<td>Total</td>
-						<td>{totalOrderCount}</td>
-						<td>{totalItemCount}</td>
+						<td class="num">{totalOrderCount}</td>
+						<td class="num">{totalItemCount}</td>
 					</tr>
 				</tfoot>
 			</table>
+		</div>
+
+		{#if selectedDay}
+			<div class="flex flex-col gap-3">
+				<div>
+					<h2 class="text-h3">{friendly(selectedDay.date)}</h2>
+					<p class="text-ink-subtle">
+						{pluralise(selectedDay.order_count, 'order')} · {pluralise(
+							selectedDay.item_count,
+							'item'
+						)} collected
+					</p>
+				</div>
+				<SummaryTables entries={selectedDay.items} onSelect={searchOrder} />
+			</div>
 		{/if}
 	</div>
-	{#if selectedDay}
-		<div class="flex flex-col gap-1">
-			<h2 class="text-xl">Items Collected on {selectedDay.date}</h2>
-			<span>
-				{selectedDay.order_count} orders, {selectedDay.item_count} items
-			</span>
-			<SummaryTables entries={selectedDay.items} {searchOrder} />
-		</div>
-	{/if}
-</div>
-
-<style lang="postcss">
-	th,
-	td {
-		@apply px-4 py-1;
-	}
-	tfoot {
-		@apply border-t border-black;
-	}
-	tr.selected {
-		@apply bg-blue-200;
-	}
-</style>
+{/if}

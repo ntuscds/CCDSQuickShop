@@ -189,7 +189,7 @@ const constructTable = (
 const MAX_COLUMNS = 12
 const columnsFromVariant = (variant: ProductVariant) => {
 	let totalColumnCount = 1
-	let columnEntries = []
+	const columnEntries = []
 	for (let i = 0; i < variant.length; i++) {
 		if (totalColumnCount * variant[i].length <= MAX_COLUMNS) {
 			columnEntries.push(i)

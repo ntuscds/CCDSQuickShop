@@ -1,3 +1,129 @@
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
+
+@layer base {
+	:root {
+		/* Shape tokens (ADS radius scale): lozenges, controls, cards, dialogs. */
+		--ds-radius-sm: 4px;
+		--ds-radius: 6px;
+		--ds-radius-lg: 8px;
+		--ds-radius-xl: 12px;
+	}
+
+	html {
+		@apply bg-surface-sunken font-sans text-body text-ink antialiased;
+		-webkit-text-size-adjust: 100%;
+	}
+
+	body {
+		@apply min-h-screen;
+	}
+
+	/* A single, consistent focus ring for every interactive element. */
+	:focus-visible {
+		outline: 2px solid theme('colors.brand.DEFAULT');
+		outline-offset: 2px;
+	}
+
+	button,
+	input,
+	select,
+	textarea {
+		@apply font-sans text-body;
+	}
+
+	hr {
+		@apply border-line;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
+	}
+}
+
+@layer components {
+	/* Standard text link. */
+	.ds-link {
+		@apply rounded-ds-sm text-brand underline underline-offset-2 hover:text-brand-hover hover:no-underline active:text-brand-pressed;
+	}
+
+	/* Form fields (shared by TextField, NumberField and Select). */
+	.ds-field {
+		@apply flex min-w-0 flex-col gap-1;
+	}
+	.ds-label {
+		@apply text-small font-semibold text-ink-subtle;
+	}
+	.ds-required {
+		@apply ml-0.5 text-danger-text;
+	}
+	.ds-control {
+		@apply flex h-10 w-full items-center rounded-ds border border-line-input bg-surface text-ink transition-colors;
+		@apply focus-within:bg-surface hover:bg-surface-sunken focus-within:hover:bg-surface;
+	}
+	.ds-control:focus-within {
+		@apply border-brand;
+		box-shadow: inset 0 0 0 1px theme('colors.brand.DEFAULT');
+	}
+	.ds-control.compact {
+		@apply h-8;
+	}
+	.ds-control.invalid {
+		@apply border-danger-border;
+		box-shadow: inset 0 0 0 1px theme('colors.danger.border');
+	}
+	.ds-control.disabled {
+		@apply border-line-disabled bg-na-100 text-ink-disabled hover:bg-na-100;
+	}
+	.ds-control > input,
+	.ds-control > select {
+		@apply h-full min-w-0 flex-1 bg-transparent px-2 text-ink placeholder:text-ink-subtlest disabled:cursor-not-allowed disabled:text-ink-disabled;
+		outline: none;
+	}
+	.ds-elem {
+		@apply flex shrink-0 items-center px-2 text-ink-subtlest;
+	}
+	.ds-elem + input {
+		@apply pl-0;
+	}
+	.ds-message {
+		@apply flex items-start gap-1 text-small text-ink-subtlest;
+	}
+	.ds-message.is-error {
+		@apply text-danger-text;
+	}
+
+	/* Data table, modelled on the ADS dynamic table. */
+	.ds-table {
+		@apply w-full border-collapse text-left text-body;
+	}
+	.ds-table th {
+		@apply border-b-2 border-line px-2 py-1 text-small font-bold text-ink-subtle;
+	}
+	.ds-table td {
+		@apply px-2 py-1.5 align-middle;
+	}
+	.ds-table tbody tr:hover {
+		@apply bg-na-100;
+	}
+	.ds-table tbody tr.is-selected {
+		@apply bg-brand-subtlest;
+	}
+	.ds-table tfoot td {
+		@apply border-t-2 border-line font-semibold;
+	}
+	.ds-table .num {
+		@apply text-right tabular-nums;
+	}
+	.ds-table-wrap {
+		@apply w-full overflow-x-auto;
+	}
+}

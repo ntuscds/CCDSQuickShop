@@ -1,54 +1,64 @@
 <script lang="ts">
 	import api from '$lib/api'
-	import Button from '$lib/Button.svelte'
-	import ErrorBoundary from '$lib/ErrorBoundary.svelte'
-	import type { ChangeEventHandler } from 'svelte/elements'
+	import Button from '$lib/ui/Button.svelte'
+	import ErrorBoundary from '$lib/ui/ErrorBoundary.svelte'
+	import Icon from '$lib/ui/Icon.svelte'
+	import TextField from '$lib/ui/TextField.svelte'
 
 	interface Props {
+		label: string
 		value?: string
+		// Keep the original aspect ratio instead of cropping to a square.
 		raw?: boolean
+		helper?: string
 	}
-	let { value = $bindable(), raw }: Props = $props()
+	let { label, value = $bindable(''), raw = false, helper }: Props = $props()
 
-	let fileSelect: HTMLInputElement
-	let resolveFileSelect: ((filelist: FileList) => void) | undefined = undefined
-	let rejectFileSelect: (() => void) | undefined = undefined
+	let fileInput: HTMLInputElement | undefined = $state()
+	let uploading = $state(false)
 	let uploadError: unknown = $state()
-	const upload = async () => {
-		fileSelect.click()
-		const files = await new Promise<FileList>((resolve, rej) => {
-			resolveFileSelect = resolve
-			rejectFileSelect = rej
-		})
-		if (files.length === 0) {
-			return
-		}
+
+	const onFileChange = async () => {
+		const file = fileInput?.files?.[0]
+		if (!file) return
+		uploading = true
+		uploadError = undefined
 		try {
-			value = await api.admin.uploadImage(files[0], raw)
+			value = await api.admin.uploadImage(file, raw)
 		} catch (e) {
 			uploadError = e
+		} finally {
+			uploading = false
+			if (fileInput) fileInput.value = ''
 		}
-	}
-
-	const selectFile: ChangeEventHandler<HTMLInputElement> = (e) => {
-		if (!e.currentTarget.files) {
-			if (rejectFileSelect) rejectFileSelect()
-			return
-		}
-		if (resolveFileSelect) resolveFileSelect(e.currentTarget.files)
 	}
 </script>
 
-<div class="flex gap-2">
-	<input bind:value />
-	<Button onClick={upload} size="md">Upload</Button>
-	<ErrorBoundary error={uploadError} />
-
-	<input type="file" onchange={selectFile} bind:this={fileSelect} class="hidden" />
+<div class="flex flex-col gap-2">
+	<div class="flex items-start gap-3">
+		{#if value}
+			<img src={value} alt="" class="size-16 shrink-0 rounded-ds border border-line object-cover" />
+		{:else}
+			<span
+				class="flex size-16 shrink-0 items-center justify-center rounded-ds border border-dashed border-line-bold text-ink-subtlest"
+			>
+				<Icon name="photo" class="size-6" />
+			</span>
+		{/if}
+		<div class="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-end">
+			<TextField {label} bind:value {helper} placeholder="https://…" class="flex-1" compact />
+			<Button onClick={() => fileInput?.click()} loading={uploading} spacing="compact">
+				{#snippet iconBefore()}<Icon name="arrow-up-tray" class="size-4" />{/snippet}
+				Upload image
+			</Button>
+		</div>
+	</div>
+	<ErrorBoundary error={uploadError} title="Upload failed" />
+	<input
+		type="file"
+		accept="image/*"
+		class="hidden"
+		bind:this={fileInput}
+		onchange={onFileChange}
+	/>
 </div>
-
-<style lang="postcss">
-	input {
-		@apply max-w-lg border border-black px-1;
-	}
-</style>

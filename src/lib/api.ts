@@ -11,6 +11,28 @@ const APIStoreClosureError = z.object({
 	show_order_check: z.boolean()
 })
 
+// A non-2xx response from the API.
+export class APIError extends Error {
+	status: number
+
+	constructor(status: number, body: string) {
+		super(`unexpected status code ${status}: ${body}`)
+		this.name = 'APIError'
+		this.status = status
+	}
+}
+
+// Thrown while the browser is being redirected to sign in.
+export class PendingAuthError extends Error {
+	constructor() {
+		super('Pending authentication')
+		this.name = 'PendingAuthError'
+	}
+}
+
+// Where to return to after signing in (the backend always redirects to /admin).
+export const RETURN_TO_KEY = 'adminReturnTo'
+
 export class StoreClosureError extends Error {
 	end_time: number | null
 	user_message: string
@@ -38,7 +60,7 @@ export const setFetch = (newFetch: typeof fetch) => {
 const handleFetch = async <T extends ZodType>(
 	typ: T,
 	path: string,
-	body?: Object,
+	body?: object | string,
 	params?: RequestInit
 ): Promise<z.infer<T>> => {
 	const resp = await fetch(`${API_URL}${path}`, {
@@ -48,15 +70,19 @@ const handleFetch = async <T extends ZodType>(
 	})
 	switch (resp.status) {
 		case 401:
+			try {
+				sessionStorage.setItem(RETURN_TO_KEY, window.location.pathname + window.location.search)
+			} catch {
+				// Storage may be unavailable; the user simply lands on the admin home page.
+			}
 			window.location.replace(`${API_URL}/auth`)
-			throw new Error('Pending authentication')
+			throw new PendingAuthError()
 		case 200:
 			break
 		case 204:
 			return
 		default:
-			const val = await resp.text()
-			throw new Error(`unexpected status code ${resp.status}: ${val}`)
+			throw new APIError(resp.status, await resp.text())
 	}
 	const val = await resp.json()
 	const parseResult = typ.safeParse(val)
@@ -93,7 +119,7 @@ const orders = {
 		return resp.checkoutURL
 	},
 	search: async (keyword: string): Promise<Order[]> => {
-		let url = `/orders/${encodeURI(keyword)}`
+		const url = `/orders/${encodeURI(keyword)}`
 		const resp = await handleFetch(z.object({ orders: Order.array() }), url)
 		return resp.orders
 	}
@@ -184,7 +210,9 @@ const adminClosures = {
 		return resp.closures
 	},
 	update: (closure: StoreClosure): Promise<StoreClosure> =>
-		handleFetch(StoreClosure, '/closures', closure)
+		handleFetch(StoreClosure, '/closures', closure),
+	remove: (id: string): Promise<void> =>
+		handleFetch(z.undefined(), `/closures/${encodeURI(id)}`, undefined, { method: 'DELETE' })
 }
 
 export type User = z.infer<typeof User>

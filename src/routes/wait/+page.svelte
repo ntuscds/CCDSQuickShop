@@ -1,74 +1,79 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
-	import { StoreClosureError } from '$lib/api'
-	import Button from '$lib/Button.svelte'
+	import { formatFriendlyDate, pluralise } from '$lib/util'
+	import AppBar from '$lib/ui/AppBar.svelte'
+	import Card from '$lib/ui/Card.svelte'
+	import Icon from '$lib/ui/Icon.svelte'
+	import SectionMessage from '$lib/ui/SectionMessage.svelte'
+	import OrderLookupForm from '$lib/OrderLookupForm.svelte'
+	import type { PageData } from './$types'
 
-	const timePart = (num: number, unit: string) => {
-		num = Math.floor(num) % 60
-		if (num === 1) return `${num} ${unit}`
-		return `${num} ${unit}s`
-	}
+	const { data }: { data: PageData } = $props()
 
-	let { data }: { data: StoreClosureError } = $props()
-	let time = $state('')
-	let interval: number
-	let seconds_left: number | null = $state(data.end_time)
+	const reopensAt = data.end_time !== null ? new Date(Date.now() + data.end_time * 1000) : null
+	let secondsLeft: number | null = $state(data.end_time)
 	onMount(() => {
-		if (!data.end_time) return
-		interval = setInterval(() => {
-			if (!seconds_left) return
-			seconds_left -= 1
-		}, 1000)
-	})
-
-	$effect(() => {
-		if (seconds_left === null) return
-		switch (true) {
-			case seconds_left > 60 * 60:
-				time = `${timePart(seconds_left / 60 / 60, 'hour')} and ${timePart(seconds_left / 60, 'minute')} until store opening!`
-				break
-			case seconds_left > 60:
-				time = `${timePart(seconds_left / 60, 'minute')} and ${timePart(seconds_left, 'second')} until store opening!`
-				break
-			case seconds_left > 0:
-				time = `${timePart(seconds_left, 'second')} until store opening!`
-				break
-			default:
-				time = 'Loading...'
-				window.location.reload()
+		if (data.end_time === null) return
+		const interval = setInterval(() => {
+			if (secondsLeft === null) return
+			secondsLeft = Math.max(0, secondsLeft - 1)
+			if (secondsLeft === 0) {
 				clearInterval(interval)
-		}
+				window.location.reload()
+			}
+		}, 1000)
+		return () => clearInterval(interval)
 	})
 
-	let orderID = $state('')
-	let orderIDValid = $derived(orderID.match(/^[A-Z]{2}\d{4}|[UG]\d{7}[A-Z]$/))
-	const visitOrder = () => {
-		if (!orderIDValid) return
-		window.location.assign(`/orders/${orderID}`)
-	}
+	// Coarse while far away, precise only in the last minute.
+	const countdown = $derived.by(() => {
+		if (secondsLeft === null) return ''
+		const s = secondsLeft
+		if (s >= 3600) {
+			return `${pluralise(Math.floor(s / 3600), 'hour')} ${pluralise(Math.floor((s % 3600) / 60), 'minute')}`
+		}
+		if (s >= 60) return pluralise(Math.floor(s / 60), 'minute')
+		return pluralise(s, 'second')
+	})
 </script>
 
 <svelte:head>
-	<title>Waiting Room - SCDS Merch Store</title>
+	<title>Store closed - SCDS Merch Store</title>
 </svelte:head>
 
-<div class="flex h-screen w-screen flex-col items-center justify-center gap-2">
-	<img src="https://ntuscds.com/scds-logo-blue.png" class="mb-2 size-32" alt="Logo for SCDS Club" />
-	<p class="text-xl">{data.user_message}</p>
-	{#if time}
-		<p class="text-sm">{time}</p>
-	{/if}
-	{#if data.allow_order}
-		<hr class="mb-4 mt-2 w-48 border-brand/50" />
-		<p class="text-center text-lg">Have an existing order?</p>
-		<form onsubmit={visitOrder}>
-			<input
-				placeholder="AB1234 / U1234567A"
-				class="w-40 border-b border-brand text-center"
-				bind:value={orderID}
-				maxlength="9"
-			/>
-		</form>
-		<Button size="md" onClick={visitOrder} disabled={!orderIDValid}>Go</Button>
-	{/if}
-</div>
+<AppBar />
+<main id="main" class="mx-auto flex w-full max-w-prose flex-col gap-4 px-4 py-8">
+	<Card>
+		<div class="flex flex-col items-center gap-4 text-center">
+			<img src="https://ntuscds.com/scds-logo-blue.png" class="size-20" alt="" />
+			<div>
+				<h1 class="text-h2">The store is closed right now</h1>
+				<p class="mt-2 text-body-lg">{data.user_message}</p>
+			</div>
+			{#if reopensAt}
+				<div class="flex items-center gap-2 rounded-ds bg-brand-subtlest px-4 py-2 text-brand">
+					<Icon name="clock" class="size-5" />
+					<span>
+						Reopens {formatFriendlyDate(reopensAt)}
+						{#if countdown}<span class="text-ink-subtle" aria-live="off">(in {countdown})</span
+							>{/if}
+					</span>
+				</div>
+				<p class="text-small text-ink-subtlest">
+					This page refreshes automatically when the store opens.
+				</p>
+			{/if}
+		</div>
+	</Card>
+
+	<Card title="Have an existing order?">
+		{#if data.allow_order}
+			<OrderLookupForm />
+		{:else}
+			<SectionMessage appearance="information">
+				Order lookup is unavailable while the store is closed. Check your NTU email for your order
+				details.
+			</SectionMessage>
+		{/if}
+	</Card>
+</main>

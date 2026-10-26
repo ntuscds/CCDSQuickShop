@@ -1,4 +1,4 @@
-import api, { type Order } from '$lib/api'
+import api, { APIError, type Order } from '$lib/api'
 import { error } from '@sveltejs/kit'
 import type { PageLoad } from './$types'
 import { sortOrder } from '$lib/util'
@@ -8,6 +8,9 @@ export const load: PageLoad = async ({ params }) => {
 	try {
 		orders = await api.orders.search(params.id)
 	} catch (e) {
+		if (e instanceof APIError && e.status === 404) {
+			error(404, 'The specified order does not exist.')
+		}
 		console.warn('Error: ', e)
 		error(500, 'Your order cannot be checked at this time.')
 	}

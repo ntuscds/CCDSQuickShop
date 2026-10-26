@@ -1,39 +1,81 @@
 <script lang="ts">
+	import { beforeNavigate } from '$app/navigation'
 	import api, { type StockCountEntry } from '$lib/api'
-	import { formatDate } from '$lib/util'
-	import Button from '$lib/Button.svelte'
-	import ErrorBoundary from '$lib/ErrorBoundary.svelte'
+	import { formatDate, pluralise } from '$lib/util'
+	import Button from '$lib/ui/Button.svelte'
+	import ConfirmDialog from '$lib/ui/ConfirmDialog.svelte'
+	import EmptyState from '$lib/ui/EmptyState.svelte'
+	import ErrorBoundary from '$lib/ui/ErrorBoundary.svelte'
+	import Icon from '$lib/ui/Icon.svelte'
+	import Lozenge from '$lib/ui/Lozenge.svelte'
+	import NumberField from '$lib/ui/NumberField.svelte'
+	import PageHeader from '$lib/ui/PageHeader.svelte'
+	import SectionMessage from '$lib/ui/SectionMessage.svelte'
+	import Spinner from '$lib/ui/Spinner.svelte'
+	import TextField from '$lib/ui/TextField.svelte'
+	import { addFlag } from '$lib/ui/flags.svelte'
+	import StatTile from './StatTile.svelte'
 
 	interface Props {
 		salePeriod: string
 	}
 	const { salePeriod }: Props = $props()
 
-	let date = $state(formatDate(new Date()).split(' ')[0])
+	// `date` is the loaded day; `dateInput` is what the date field shows.
+	const today = formatDate(new Date()).split(' ')[0]
+	let date = $state(today)
+	let dateInput = $state(today)
 	let entries: StockCountEntry[] = $state([])
 	let loadedDate: string | undefined = $state()
 	let dirty = $state(false)
+	let loading = $state(true)
 	let error: unknown = $state()
-	let saved = $state(false)
 
 	const load = async (date: string) => {
-		if (!date) return
+		loading = true
+		error = undefined
 		try {
 			const resp = await api.admin.sales(salePeriod).stockCounts(date)
 			entries = resp.entries
 			loadedDate = resp.date
 			dirty = false
-			saved = false
 		} catch (e) {
 			error = e
+		} finally {
+			loading = false
 		}
 	}
 	$effect(() => {
 		load(date)
 	})
 
+	// Changing the day discards unsaved counts, so ask first.
+	let pendingDate: string | undefined = $state()
+	let discardOpen = $state(false)
+	const onDateInput = () => {
+		if (!dateInput || dateInput === date) return
+		if (dirty) {
+			pendingDate = dateInput
+			discardOpen = true
+		} else {
+			date = dateInput
+		}
+	}
+	const DISCARD_PROMPT = 'You have unsaved stock counts. Discard them?'
+	beforeNavigate((nav) => {
+		if (dirty && !window.confirm(DISCARD_PROMPT)) nav.cancel()
+	})
+	const onBeforeUnload = (e: BeforeUnloadEvent) => {
+		if (!dirty) return
+		e.preventDefault()
+		e.returnValue = ''
+	}
+
+	let saving = $state(false)
 	const save = async () => {
 		if (!loadedDate) return
+		saving = true
+		error = undefined
 		try {
 			const resp = await api.admin.sales(salePeriod).updateStockCounts(
 				loadedDate,
@@ -41,9 +83,11 @@
 			)
 			entries = resp.entries
 			dirty = false
-			saved = true
+			addFlag({ appearance: 'success', title: 'Stock counts saved', description: loadedDate })
 		} catch (e) {
 			error = e
+		} finally {
+			saving = false
 		}
 	}
 
@@ -51,29 +95,26 @@
 		entries.some((x) => x.opening === null && x.previous_closing !== null)
 	)
 	const fillOpening = () => {
-		entries = entries.map((x) => ({
-			...x,
-			opening: x.opening ?? x.previous_closing
-		}))
+		entries = entries.map((x) => ({ ...x, opening: x.opening ?? x.previous_closing }))
 		dirty = true
 	}
 	const markDirty = () => {
 		dirty = true
-		saved = false
 	}
 
 	// Stock that should be left over if every item that left the stock was
 	// recorded as a collected order.
-	const expected = (x: StockCountEntry) => (x.opening === null ? null : x.opening - x.collected)
+	const expected = (x: StockCountEntry) => (x.opening == null ? null : x.opening - x.collected)
 	const difference = (x: StockCountEntry) => {
 		const e = expected(x)
-		if (e === null || x.closing === null) return null
+		if (e === null || x.closing == null) return null
 		return x.closing - e
 	}
-	const formatDifference = (diff: number | null) => {
-		if (diff === null) return '-'
-		if (diff > 0) return `+${diff}`
-		return `${diff}`
+	const describeDifference = (diff: number | null) => {
+		if (diff === null) return '—'
+		if (diff === 0) return 'Matches'
+		if (diff < 0) return `Short ${-diff}`
+		return `Over ${diff}`
 	}
 
 	const completeEntries = $derived(entries.filter((x) => difference(x) !== null))
@@ -87,123 +128,153 @@
 	})
 </script>
 
-<div class="flex flex-col gap-4">
-	<div class="flex flex-wrap items-center gap-4">
-		<label class="flex items-center gap-2">
-			Collection Date
-			<input type="date" bind:value={date} />
-		</label>
-		<Button onClick={() => load(date)} size="md">Reload</Button>
-		<Button onClick={fillOpening} size="md" disabled={!canFillOpening}>
-			Fill Opening from Previous Closing
-		</Button>
-		<Button onClick={save} size="md" disabled={!dirty}>Save</Button>
-		{#if dirty}
-			<span class="text-orange-700">Unsaved changes</span>
-		{:else if saved}
-			<span class="text-green-700">Saved</span>
-		{/if}
-	</div>
-	<ErrorBoundary {error} />
-	<p class="max-w-prose text-sm text-gray-700">
-		Count the stock at the start of the collection day (Opening) and at the end (Closing).
-		Difference is Closing − (Opening − Collected): a negative number means items are missing
-		compared to the orders marked as collected, a positive number means there is more stock left
-		than expected.
-	</p>
-	{#if entries.length === 0}
-		No items have been sold in this sale period.
+<svelte:head><title>Stock count - Admin</title></svelte:head>
+<svelte:window onbeforeunload={onBeforeUnload} />
+
+<PageHeader
+	title="Stock count"
+	description="Count the stock at the start and end of a collection day and compare it with the orders marked as collected."
+/>
+
+<div class="flex flex-wrap items-end gap-3">
+	<TextField
+		label="Collection day"
+		type="date"
+		bind:value={dateInput}
+		oninput={onDateInput}
+		class="w-48"
+	/>
+	<Button onClick={() => load(date)} {loading}>
+		{#snippet iconBefore()}<Icon name="arrow-path" class="size-4" />{/snippet}
+		Reload
+	</Button>
+	<Button onClick={fillOpening} disabled={!canFillOpening}>
+		Fill opening from previous closing
+	</Button>
+</div>
+
+<ErrorBoundary {error} />
+
+{#if loading && entries.length === 0}
+	<div class="flex justify-center py-12"><Spinner size="large" /></div>
+{:else if entries.length === 0}
+	<EmptyState
+		icon="archive-box"
+		title="No items sold in this sale period"
+		description="Items appear here once orders are paid."
+	/>
+{:else}
+	{#if completeEntries.length === 0}
+		<SectionMessage appearance="information">
+			Enter the opening and closing counts to compare them with the collected orders. Difference =
+			closing − (opening − collected). "Short" means items are missing; "Over" means more stock is
+			left than expected.
+		</SectionMessage>
+	{:else if mismatchCount === 0}
+		<SectionMessage appearance="success">
+			All {pluralise(completeEntries.length, 'counted item')} match the collected orders.
+		</SectionMessage>
 	{:else}
-		<div class="flex flex-col gap-1">
-			<h2 class="text-xl">Stock Opname for {loadedDate}</h2>
-			<span>
-				{#if completeEntries.length === 0}
-					Enter opening and closing counts to compare against collected orders.
-				{:else if mismatchCount === 0}
-					<span class="text-green-700">
-						All {completeEntries.length} counted items match the collected orders.
-					</span>
-				{:else}
-					<span class="text-red-700">
-						{mismatchCount} of {completeEntries.length} counted items do not match the collected orders.
-					</span>
-				{/if}
-			</span>
-		</div>
-		<table class="w-fit border border-black text-center">
+		<SectionMessage appearance="warning">
+			{mismatchCount} of {pluralise(completeEntries.length, 'counted item')} do not match the collected
+			orders.
+		</SectionMessage>
+	{/if}
+
+	<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+		<StatTile label="Opening (counted items)" value={totals.opening} />
+		<StatTile label="Collected" value={totals.collected} />
+		<StatTile label="Closing (counted items)" value={totals.closing} />
+		<StatTile
+			label="Difference"
+			value={describeDifference(completeEntries.length ? totals.difference : null)}
+		/>
+	</div>
+
+	<div class="ds-table-wrap rounded-ds-lg border border-line bg-surface-raised">
+		<table class="ds-table">
+			<caption class="sr-only">Stock counts for {loadedDate}</caption>
 			<thead>
 				<tr>
-					<th>Item</th>
-					<th>Variant</th>
-					<th>Opening</th>
-					<th>Collected</th>
-					<th>Expected Closing</th>
-					<th>Closing</th>
-					<th>Difference</th>
+					<th scope="col">Item</th>
+					<th scope="col">Variant</th>
+					<th scope="col">Opening</th>
+					<th scope="col" class="num">Collected</th>
+					<th scope="col" class="num">Expected closing</th>
+					<th scope="col">Closing</th>
+					<th scope="col">Difference</th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each entries as entry, i}
+				{#each entries as entry, i (`${entry.name}|${entry.variant}`)}
 					{@const diff = difference(entry)}
-					<tr class="odd:bg-gray-200">
-						<td class="text-left">{entry.name}</td>
-						<td class="text-left">{entry.variant}</td>
+					<tr>
+						<td class="whitespace-nowrap font-medium">{entry.name}</td>
+						<td class="whitespace-nowrap">{entry.variant}</td>
 						<td>
-							<input
-								type="number"
-								min="0"
+							<NumberField
+								label={`Opening count for ${entry.name} ${entry.variant}`}
+								hideLabel
+								compact
+								min={0}
 								bind:value={entries[i].opening}
-								oninput={markDirty}
 								placeholder={entry.previous_closing === null ? '' : `${entry.previous_closing}`}
+								oninput={markDirty}
+								class="w-24"
 							/>
 						</td>
-						<td>{entry.collected}</td>
-						<td>{expected(entry) ?? '-'}</td>
+						<td class="num">{entry.collected}</td>
+						<td class="num">{expected(entry) ?? '—'}</td>
 						<td>
-							<input type="number" min="0" bind:value={entries[i].closing} oninput={markDirty} />
+							<NumberField
+								label={`Closing count for ${entry.name} ${entry.variant}`}
+								hideLabel
+								compact
+								min={0}
+								bind:value={entries[i].closing}
+								oninput={markDirty}
+								class="w-24"
+							/>
 						</td>
-						<td class:mismatch={diff !== null && diff !== 0} class:match={diff === 0}>
-							{formatDifference(diff)}
+						<td class="whitespace-nowrap">
+							{#if diff === null}
+								<span class="text-ink-subtlest">—</span>
+							{:else if diff === 0}
+								<Lozenge appearance="success">Matches</Lozenge>
+							{:else if diff < 0}
+								<Lozenge appearance="removed" bold>Short {-diff}</Lozenge>
+							{:else}
+								<Lozenge appearance="moved">Over {diff}</Lozenge>
+							{/if}
 						</td>
 					</tr>
 				{/each}
 			</tbody>
-			{#if completeEntries.length > 0}
-				<tfoot>
-					<tr class="font-bold">
-						<td class="text-left" colspan="2">Total (counted items)</td>
-						<td>{totals.opening}</td>
-						<td>{totals.collected}</td>
-						<td>{totals.expected}</td>
-						<td>{totals.closing}</td>
-						<td class:mismatch={mismatchCount > 0} class:match={mismatchCount === 0}>
-							{formatDifference(totals.difference)}
-						</td>
-					</tr>
-				</tfoot>
-			{/if}
 		</table>
-	{/if}
-</div>
+	</div>
+
+	<div class="ds-stock-footer">
+		<Button appearance="primary" onClick={save} loading={saving}>
+			Save counts for {loadedDate}
+		</Button>
+		{#if dirty}<Lozenge appearance="moved">Unsaved changes</Lozenge>{/if}
+	</div>
+{/if}
+
+<ConfirmDialog
+	bind:open={discardOpen}
+	title="Discard unsaved counts?"
+	message={`The counts you entered for ${loadedDate} have not been saved.`}
+	confirmLabel="Discard and switch day"
+	appearance="warning"
+	onConfirm={() => {
+		if (pendingDate) date = pendingDate
+	}}
+	onCancel={() => (dateInput = date)}
+/>
 
 <style lang="postcss">
-	th,
-	td {
-		@apply px-4 py-1;
-	}
-	tfoot {
-		@apply border-t border-black;
-	}
-	input {
-		@apply border border-black px-1;
-	}
-	input[type='number'] {
-		@apply w-20 text-right;
-	}
-	td.mismatch {
-		@apply bg-red-200 font-bold text-red-800;
-	}
-	td.match {
-		@apply bg-green-200 text-green-800;
+	.ds-stock-footer {
+		@apply sticky bottom-0 -mx-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface px-4 py-3 md:-mx-6 md:px-6;
 	}
 </style>
