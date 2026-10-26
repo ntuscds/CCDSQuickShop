@@ -126,6 +126,42 @@
 		return `Over ${diff}`
 	}
 
+	// Rows are grouped by product; each group can be collapsed and the list filtered.
+	let filter = $state('')
+	const collapsed: Record<string, boolean> = $state({})
+	const matchesFilter = (x: StockCountEntry) => {
+		const q = filter.trim().toLowerCase()
+		return !q || `${x.name} ${x.variant}`.toLowerCase().includes(q)
+	}
+	const groups = $derived.by(() => {
+		const result: { name: string; rows: number[] }[] = []
+		entries.forEach((entry, i) => {
+			if (!matchesFilter(entry)) return
+			const last = result[result.length - 1]
+			if (last && last.name === entry.name) last.rows.push(i)
+			else result.push({ name: entry.name, rows: [i] })
+		})
+		return result
+	})
+	const setAllCollapsed = (value: boolean) => {
+		for (const group of groups) collapsed[group.name] = value
+	}
+	const groupTotals = (rows: number[]) => {
+		const xs = rows.map((i) => entries[i])
+		const sum = (f: (x: StockCountEntry) => number) => xs.reduce((acc, x) => acc + f(x), 0)
+		const openingEntered = xs.filter((x) => x.opening != null)
+		const closingEntered = xs.filter((x) => x.closing != null)
+		return {
+			ordered: sum((x) => x.ordered),
+			expectedOpening: sum(expectedOpening),
+			collected: sum((x) => x.collected),
+			opening: openingEntered.length ? sum((x) => x.opening ?? 0) : null,
+			closing: closingEntered.length ? sum((x) => x.closing ?? 0) : null,
+			counted: xs.filter((x) => difference(x) !== null).length,
+			mismatches: xs.filter((x) => (difference(x) ?? 0) !== 0).length
+		}
+	}
+
 	const completeEntries = $derived(entries.filter((x) => difference(x) !== null))
 	const mismatchCount = $derived(completeEntries.filter((x) => difference(x) !== 0).length)
 	const totals = $derived({
@@ -158,6 +194,13 @@
 		Reload
 	</Button>
 	<Button onClick={fillOpening} disabled={!canFillOpening}>Fill empty opening counts</Button>
+	{#if entries.length > 0}
+		<TextField label="Filter items" bind:value={filter} placeholder="e.g. Hoodie, Navy, M" class="w-56" />
+		<div class="flex gap-3 pb-2">
+			<Button appearance="link" onClick={() => setAllCollapsed(false)}>Expand all</Button>
+			<Button appearance="link" onClick={() => setAllCollapsed(true)}>Collapse all</Button>
+		</div>
+	{/if}
 </div>
 
 <ErrorBoundary {error} />
@@ -216,53 +259,95 @@
 					<th scope="col">Difference</th>
 				</tr>
 			</thead>
-			<tbody>
-				{#each entries as entry, i (`${entry.name}|${entry.variant}`)}
-					{@const diff = difference(entry)}
-					<tr>
-						<td class="whitespace-nowrap font-medium">{entry.name}</td>
-						<td class="whitespace-nowrap">{entry.variant}</td>
-						<td class="num">{entry.ordered}</td>
-						<td class="num">{expectedOpening(entry)}</td>
-						<td>
-							<NumberField
-								label={`Opening count for ${entry.name} ${entry.variant}`}
-								hideLabel
-								compact
-								min={0}
-								bind:value={entries[i].opening}
-								placeholder={`${suggestedOpening(entry)}`}
-								oninput={markDirty}
-								class="w-24"
-							/>
-						</td>
-						<td class="num">{entry.collected}</td>
-						<td class="num">{expected(entry) ?? '—'}</td>
-						<td>
-							<NumberField
-								label={`Closing count for ${entry.name} ${entry.variant}`}
-								hideLabel
-								compact
-								min={0}
-								bind:value={entries[i].closing}
-								oninput={markDirty}
-								class="w-24"
-							/>
-						</td>
+			{#each groups as group (group.name)}
+				{@const t = groupTotals(group.rows)}
+				{@const open = !collapsed[group.name]}
+				<tbody class="ds-stock-group">
+					<tr class="ds-stock-group-row">
+						<th scope="row" colspan="2" class="text-left">
+							<button
+								type="button"
+								class="flex items-center gap-2 rounded-ds-sm text-body font-semibold text-ink"
+								aria-expanded={open}
+								onclick={() => (collapsed[group.name] = open)}
+							>
+								<Icon name={open ? 'chevron-down' : 'chevron-right'} class="size-4 text-ink-subtle" />
+								{group.name}
+								<span class="font-normal text-ink-subtle">
+									· {pluralise(group.rows.length, 'variant')}
+								</span>
+							</button>
+						</th>
+						<td class="num">{t.ordered}</td>
+						<td class="num">{t.expectedOpening}</td>
+						<td class="num">{t.opening ?? '—'}</td>
+						<td class="num">{t.collected}</td>
+						<td class="num">{t.opening === null ? '—' : t.opening - t.collected}</td>
+						<td class="num">{t.closing ?? '—'}</td>
 						<td class="whitespace-nowrap">
-							{#if diff === null}
-								<span class="text-ink-subtlest">—</span>
-							{:else if diff === 0}
-								<Lozenge appearance="success">Matches</Lozenge>
-							{:else if diff < 0}
-								<Lozenge appearance="removed" bold>Short {-diff}</Lozenge>
-							{:else}
-								<Lozenge appearance="moved">Over {diff}</Lozenge>
+							{#if t.mismatches > 0}
+								<Lozenge appearance="removed">{pluralise(t.mismatches, 'mismatch', 'mismatches')}</Lozenge>
+							{:else if t.counted === group.rows.length}
+								<Lozenge appearance="success">All match</Lozenge>
+							{:else if t.counted > 0}
+								<Lozenge>{t.counted} of {group.rows.length} counted</Lozenge>
 							{/if}
 						</td>
 					</tr>
-				{/each}
-			</tbody>
+					{#if open}
+						{#each group.rows as i (`${entries[i].name}|${entries[i].variant}`)}
+							{@const entry = entries[i]}
+							{@const diff = difference(entry)}
+							<tr>
+								<td></td>
+								<td class="whitespace-nowrap">{entry.variant || 'No option'}</td>
+								<td class="num">{entry.ordered}</td>
+								<td class="num">{expectedOpening(entry)}</td>
+								<td>
+									<NumberField
+										label={`Opening count for ${entry.name} ${entry.variant}`}
+										hideLabel
+										compact
+										min={0}
+										bind:value={entries[i].opening}
+										placeholder={`${suggestedOpening(entry)}`}
+										oninput={markDirty}
+										class="w-24"
+									/>
+								</td>
+								<td class="num">{entry.collected}</td>
+								<td class="num">{expected(entry) ?? '—'}</td>
+								<td>
+									<NumberField
+										label={`Closing count for ${entry.name} ${entry.variant}`}
+										hideLabel
+										compact
+										min={0}
+										bind:value={entries[i].closing}
+										oninput={markDirty}
+										class="w-24"
+									/>
+								</td>
+								<td class="whitespace-nowrap">
+									{#if diff === null}
+										<span class="text-ink-subtlest">—</span>
+									{:else if diff === 0}
+										<Lozenge appearance="success">Matches</Lozenge>
+									{:else if diff < 0}
+										<Lozenge appearance="removed" bold>Short {-diff}</Lozenge>
+									{:else}
+										<Lozenge appearance="moved">Over {diff}</Lozenge>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					{/if}
+				</tbody>
+			{:else}
+				<tbody>
+					<tr><td colspan="9" class="py-6 text-center text-ink-subtle">No items match "{filter}".</td></tr>
+				</tbody>
+			{/each}
 		</table>
 	</div>
 
@@ -287,6 +372,13 @@
 />
 
 <style lang="postcss">
+	.ds-stock-group-row {
+		@apply bg-surface-sunken;
+	}
+	.ds-stock-group-row th,
+	.ds-stock-group-row td {
+		@apply border-t border-line font-semibold;
+	}
 	.ds-stock-footer {
 		@apply sticky bottom-0 -mx-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface px-4 py-3 md:-mx-6 md:px-6;
 	}
