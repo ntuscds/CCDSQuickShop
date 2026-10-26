@@ -64,6 +64,8 @@ type StockCountEntry struct {
 	// their difference is the stock expected at the start of the day.
 	Ordered         int `json:"ordered"`
 	CollectedBefore int `json:"collected_before"`
+	// Image of the variant as bought.
+	ImageURL string `json:"image_url"`
 }
 
 type StockCountResponse struct {
@@ -197,7 +199,9 @@ func (s *Server) stockCountEntries(ctx context.Context, salePeriod int64, date s
 		return nil, fmt.Errorf("error fetching sold items: %w", err)
 	}
 	for _, item := range sold {
-		entryFor(item.ProductName, item.Variant).Ordered = int(item.Sum.Float64)
+		entry := entryFor(item.ProductName, item.Variant)
+		entry.Ordered = int(item.Sum.Float64)
+		entry.ImageURL = item.ImageUrl
 	}
 
 	days, err := s.collectionDays(ctx, salePeriod, loc)

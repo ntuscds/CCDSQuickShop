@@ -998,7 +998,8 @@ SELECT
 	order_items.product_id,
 	CAST(COALESCE(products.name, order_items.product_name) AS TEXT) AS product_name,
 	order_items.variant,
-	SUM(order_items.amount)
+	SUM(order_items.amount),
+	CAST(MAX(order_items.image_url) AS TEXT) AS image_url
 FROM
 	orders
 	JOIN order_items ON orders.order_id = order_items.order_id
@@ -1025,6 +1026,7 @@ type OrderSummaryRow struct {
 	ProductName string
 	Variant     string
 	Sum         sql.NullFloat64
+	ImageUrl    string
 }
 
 func (q *Queries) OrderSummary(ctx context.Context, arg OrderSummaryParams) ([]OrderSummaryRow, error) {
@@ -1041,6 +1043,7 @@ func (q *Queries) OrderSummary(ctx context.Context, arg OrderSummaryParams) ([]O
 			&i.ProductName,
 			&i.Variant,
 			&i.Sum,
+			&i.ImageUrl,
 		); err != nil {
 			return nil, err
 		}

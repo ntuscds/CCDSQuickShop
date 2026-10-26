@@ -4,6 +4,7 @@
 	import { formatDate, pluralise } from '$lib/util'
 	import Button from '$lib/ui/Button.svelte'
 	import ConfirmDialog from '$lib/ui/ConfirmDialog.svelte'
+	import Dialog from '$lib/ui/Dialog.svelte'
 	import EmptyState from '$lib/ui/EmptyState.svelte'
 	import ErrorBoundary from '$lib/ui/ErrorBoundary.svelte'
 	import Icon from '$lib/ui/Icon.svelte'
@@ -126,6 +127,9 @@
 		return `Over ${diff}`
 	}
 
+	// Variant whose image is shown full size.
+	let zoom: StockCountEntry | undefined = $state()
+
 	// Rows are grouped by product; each group can be collapsed and the list filtered.
 	let filter = $state('')
 	const collapsed: Record<string, boolean> = $state({})
@@ -195,7 +199,12 @@
 	</Button>
 	<Button onClick={fillOpening} disabled={!canFillOpening}>Fill empty opening counts</Button>
 	{#if entries.length > 0}
-		<TextField label="Filter items" bind:value={filter} placeholder="e.g. Hoodie, Navy, M" class="w-56" />
+		<TextField
+			label="Filter items"
+			bind:value={filter}
+			placeholder="e.g. Hoodie, Navy, M"
+			class="w-56"
+		/>
 		<div class="flex gap-3 pb-2">
 			<Button appearance="link" onClick={() => setAllCollapsed(false)}>Expand all</Button>
 			<Button appearance="link" onClick={() => setAllCollapsed(true)}>Collapse all</Button>
@@ -271,7 +280,16 @@
 								aria-expanded={open}
 								onclick={() => (collapsed[group.name] = open)}
 							>
-								<Icon name={open ? 'chevron-down' : 'chevron-right'} class="size-4 text-ink-subtle" />
+								<Icon
+									name={open ? 'chevron-down' : 'chevron-right'}
+									class="size-4 text-ink-subtle"
+								/>
+								<img
+									src={entries[group.rows[0]].image_url}
+									alt=""
+									class="size-6 rounded-ds-sm border border-line object-cover"
+									loading="lazy"
+								/>
 								{group.name}
 								<span class="font-normal text-ink-subtle">
 									· {pluralise(group.rows.length, 'variant')}
@@ -286,7 +304,9 @@
 						<td class="num">{t.closing ?? '—'}</td>
 						<td class="whitespace-nowrap">
 							{#if t.mismatches > 0}
-								<Lozenge appearance="removed">{pluralise(t.mismatches, 'mismatch', 'mismatches')}</Lozenge>
+								<Lozenge appearance="removed"
+									>{pluralise(t.mismatches, 'mismatch', 'mismatches')}</Lozenge
+								>
 							{:else if t.counted === group.rows.length}
 								<Lozenge appearance="success">All match</Lozenge>
 							{:else if t.counted > 0}
@@ -300,7 +320,20 @@
 							{@const diff = difference(entry)}
 							<tr>
 								<td></td>
-								<td class="whitespace-nowrap">{entry.variant || 'No option'}</td>
+								<td class="whitespace-nowrap">
+									<span class="flex items-center gap-2">
+										<button
+											type="button"
+											class="ds-thumb"
+											onclick={() => (zoom = entry)}
+											aria-label={`Show image of ${entry.name} ${entry.variant}`}
+										>
+											<img src={entry.image_url} alt="" loading="lazy" />
+											<img src={entry.image_url} alt="" class="ds-thumb-preview" />
+										</button>
+										{entry.variant || 'No option'}
+									</span>
+								</td>
 								<td class="num">{entry.ordered}</td>
 								<td class="num">{expectedOpening(entry)}</td>
 								<td>
@@ -345,7 +378,10 @@
 				</tbody>
 			{:else}
 				<tbody>
-					<tr><td colspan="9" class="py-6 text-center text-ink-subtle">No items match "{filter}".</td></tr>
+					<tr
+						><td colspan="9" class="py-6 text-center text-ink-subtle">No items match "{filter}".</td
+						></tr
+					>
 				</tbody>
 			{/each}
 		</table>
@@ -371,7 +407,36 @@
 	onCancel={() => (dateInput = date)}
 />
 
+<Dialog
+	open={!!zoom}
+	title={zoom ? `${zoom.name} · ${zoom.variant || 'No option'}` : ''}
+	width="large"
+	onclose={() => (zoom = undefined)}
+>
+	{#if zoom}
+		<img
+			src={zoom.image_url}
+			alt={`Picture of ${zoom.name}`}
+			class="mx-auto mb-4 max-h-[70vh] rounded-ds"
+		/>
+	{/if}
+</Dialog>
+
 <style lang="postcss">
+	.ds-thumb {
+		@apply relative inline-flex shrink-0 rounded-ds-sm;
+	}
+	.ds-thumb > img:first-child {
+		@apply size-8 rounded-ds-sm border border-line bg-surface-sunken object-cover;
+	}
+	/* Larger preview while hovering or focusing the thumbnail. */
+	.ds-thumb-preview {
+		@apply pointer-events-none absolute left-10 top-1/2 z-20 hidden w-40 -translate-y-1/2 rounded-ds-lg border border-line bg-surface object-contain shadow-overlay;
+	}
+	.ds-thumb:hover .ds-thumb-preview,
+	.ds-thumb:focus-visible .ds-thumb-preview {
+		@apply block;
+	}
 	.ds-stock-group-row {
 		@apply bg-surface-sunken;
 	}
