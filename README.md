@@ -51,3 +51,24 @@ environment variables:
 
 Stripe webhook is assumed to be configured to send requests to
 `/api/v0/checkout/stripe`.
+
+## Backing Up the Database
+
+The database is migrated automatically when the server starts, so back it up
+before deploying a version with new migrations. In the Docker image the
+database lives at `/app/db.sqlite3`.
+
+```sh
+# Recommended: stop the container so the copy is guaranteed to be consistent.
+$ docker stop <container>
+$ scripts/backup-db.sh --container <container>
+$ docker start <container>   # or deploy the new image
+
+# A database file on the host (uses sqlite3's online backup if installed).
+$ scripts/backup-db.sh --file path/to/db.sqlite3
+```
+
+Backups are written to `backups/` and checked with `PRAGMA integrity_check`
+when `sqlite3` is installed. To restore, stop the server and copy the backup
+back to the database path (e.g. `docker cp backups/db-<timestamp>.sqlite3
+<container>:/app/db.sqlite3`).
