@@ -7,6 +7,8 @@
 	import Options from '$lib/Options.svelte'
 	import MerchEdit from './MerchEdit.svelte'
 	import OrderSummaryView from './OrderSummaryView.svelte'
+	import CollectionSummaryView from './CollectionSummaryView.svelte'
+	import StockOpname from './StockOpname.svelte'
 	import CouponEdit from './CouponEdit.svelte'
 	import Button from '$lib/Button.svelte'
 
@@ -16,7 +18,13 @@
 	const { searchOrder }: Props = $props()
 
 	let selected: string | undefined = $state(undefined)
-	const options = [{ text: 'Merch' }, { text: 'Coupons' }, { text: 'Order Summary' }]
+	const options = [
+		{ text: 'Merch' },
+		{ text: 'Coupons' },
+		{ text: 'Order Summary' },
+		{ text: 'Daily Collection' },
+		{ text: 'Stock Opname' }
+	]
 
 	let loading = $state(true)
 	let viewing: string | undefined = $state(undefined)
@@ -85,6 +93,10 @@
 		<CouponEdit salePeriod={viewing} />
 	{:else if selected === 'Order Summary'}
 		<OrderSummaryView salePeriod={viewing} {searchOrder} />
+	{:else if selected === 'Daily Collection'}
+		<CollectionSummaryView salePeriod={viewing} {searchOrder} />
+	{:else if selected === 'Stock Opname'}
+		<StockOpname salePeriod={viewing} />
 	{/if}
 {:else}
 	<table class="w-fit border border-black text-center">

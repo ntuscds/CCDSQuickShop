@@ -45,6 +45,57 @@ func (q *Queries) AuthAdminUser(ctx context.Context, email string) (string, erro
 	return email, err
 }
 
+const collectedOrderItems = `-- name: CollectedOrderItems :many
+SELECT
+	orders.order_id, orders.collection_time,
+	order_items.product_name, order_items.variant, order_items.amount
+FROM
+	orders
+	JOIN order_items ON orders.order_id = order_items.order_id
+WHERE
+	orders.collection_time IS NOT NULL
+	AND orders.payment_time IS NOT NULL
+	AND orders.cancelled = FALSE
+	AND orders.sale_period = ?
+`
+
+type CollectedOrderItemsRow struct {
+	OrderID        string
+	CollectionTime sql.NullTime
+	ProductName    string
+	Variant        string
+	Amount         int64
+}
+
+func (q *Queries) CollectedOrderItems(ctx context.Context, salePeriod int64) ([]CollectedOrderItemsRow, error) {
+	rows, err := q.db.QueryContext(ctx, collectedOrderItems, salePeriod)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CollectedOrderItemsRow
+	for rows.Next() {
+		var i CollectedOrderItemsRow
+		if err := rows.Scan(
+			&i.OrderID,
+			&i.CollectionTime,
+			&i.ProductName,
+			&i.Variant,
+			&i.Amount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const completeCheckout = `-- name: CompleteCheckout :one
 UPDATE
 	orders
@@ -652,6 +703,45 @@ func (q *Queries) ListSalePeriods(ctx context.Context) ([]SalePeriod, error) {
 	return items, nil
 }
 
+const listStockCounts = `-- name: ListStockCounts :many
+SELECT
+	sale_period, count_date, product_name, variant, opening_count, closing_count
+FROM
+	stock_counts
+WHERE
+	sale_period = ?
+`
+
+func (q *Queries) ListStockCounts(ctx context.Context, salePeriod int64) ([]StockCount, error) {
+	rows, err := q.db.QueryContext(ctx, listStockCounts, salePeriod)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StockCount
+	for rows.Next() {
+		var i StockCount
+		if err := rows.Scan(
+			&i.SalePeriod,
+			&i.CountDate,
+			&i.ProductName,
+			&i.Variant,
+			&i.OpeningCount,
+			&i.ClosingCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStoreClosures = `-- name: ListStoreClosures :many
 SELECT
 	id, start_time, end_time, user_message, allow_order_check, deleted
@@ -1231,6 +1321,37 @@ func (q *Queries) UpdateStoreClosure(ctx context.Context, arg UpdateStoreClosure
 		arg.UserMessage,
 		arg.AllowOrderCheck,
 		arg.ID,
+	)
+	return err
+}
+
+const upsertStockCount = `-- name: UpsertStockCount :exec
+INSERT INTO stock_counts (
+	sale_period, count_date, product_name, variant, opening_count, closing_count
+) VALUES (
+	?, ?, ?, ?, ?, ?
+) ON CONFLICT (sale_period, count_date, product_name, variant) DO UPDATE SET
+	opening_count = excluded.opening_count,
+	closing_count = excluded.closing_count
+`
+
+type UpsertStockCountParams struct {
+	SalePeriod   int64
+	CountDate    string
+	ProductName  string
+	Variant      string
+	OpeningCount sql.NullInt64
+	ClosingCount sql.NullInt64
+}
+
+func (q *Queries) UpsertStockCount(ctx context.Context, arg UpsertStockCountParams) error {
+	_, err := q.db.ExecContext(ctx, upsertStockCount,
+		arg.SalePeriod,
+		arg.CountDate,
+		arg.ProductName,
+		arg.Variant,
+		arg.OpeningCount,
+		arg.ClosingCount,
 	)
 	return err
 }

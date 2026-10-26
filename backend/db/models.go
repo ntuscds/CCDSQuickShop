@@ -68,6 +68,15 @@ type SalePeriod struct {
 	DeleteTime sql.NullTime
 }
 
+type StockCount struct {
+	SalePeriod   int64
+	CountDate    string
+	ProductName  string
+	Variant      string
+	OpeningCount sql.NullInt64
+	ClosingCount sql.NullInt64
+}
+
 type StoreClosure struct {
 	ID              int64
 	StartTime       time.Time

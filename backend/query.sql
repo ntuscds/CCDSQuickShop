@@ -388,3 +388,33 @@ SET
 	deleted = TRUE
 WHERE
 	id = ?;
+
+-- name: CollectedOrderItems :many
+SELECT
+	orders.order_id, orders.collection_time,
+	order_items.product_name, order_items.variant, order_items.amount
+FROM
+	orders
+	JOIN order_items ON orders.order_id = order_items.order_id
+WHERE
+	orders.collection_time IS NOT NULL
+	AND orders.payment_time IS NOT NULL
+	AND orders.cancelled = FALSE
+	AND orders.sale_period = ?;
+
+-- name: ListStockCounts :many
+SELECT
+	*
+FROM
+	stock_counts
+WHERE
+	sale_period = ?;
+
+-- name: UpsertStockCount :exec
+INSERT INTO stock_counts (
+	sale_period, count_date, product_name, variant, opening_count, closing_count
+) VALUES (
+	?, ?, ?, ?, ?, ?
+) ON CONFLICT (sale_period, count_date, product_name, variant) DO UPDATE SET
+	opening_count = excluded.opening_count,
+	closing_count = excluded.closing_count;

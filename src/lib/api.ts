@@ -145,8 +145,25 @@ const adminSales = (period: string = 'current') =>
 			let url = `/sales/${period}/order_summary`
 			if (showCollected) url += '?show_collected=1'
 			return handleFetch(OrderSummary, url)
-		}
+		},
+		collectionSummary: async (): Promise<CollectionDay[]> => {
+			const resp = await handleFetch(
+				z.object({ days: CollectionDay.array() }),
+				`/sales/${period}/collection_summary?tz_offset=${tzOffset()}`
+			)
+			return resp.days
+		},
+		stockCounts: (date: string): Promise<StockCounts> =>
+			handleFetch(StockCounts, `/sales/${period}/stock_counts/${date}?tz_offset=${tzOffset()}`),
+		updateStockCounts: (date: string, entries: StockCountEntry[]): Promise<StockCounts> =>
+			handleFetch(StockCounts, `/sales/${period}/stock_counts/${date}?tz_offset=${tzOffset()}`, {
+				entries
+			})
 	}) as const
+
+// Offset of the browser's timezone from UTC in minutes, used by the server to
+// split collections into the admin's local days.
+const tzOffset = () => -new Date().getTimezoneOffset()
 
 const adminOrders = {
 	cancel: (orderID: string): Promise<void> =>
@@ -226,17 +243,34 @@ const StoreClosure = z.object({
 	message: z.string(),
 	show_order_check: z.boolean()
 })
+const SummaryEntry = z.object({
+	name: z.string(),
+	variant: z.string(),
+	count: z.number()
+})
 const OrderSummary = z.object({
-	unfulfilled: z
-		.object({
-			name: z.string(),
-			variant: z.string(),
-			count: z.number()
-		})
-		.array(),
+	unfulfilled: SummaryEntry.array(),
 	order_id_samples: z.string().array(),
 	unfulfilled_order_count: z.number(),
 	fulfilled_order_count: z.number()
+})
+const CollectionDay = z.object({
+	date: z.string(),
+	order_count: z.number(),
+	item_count: z.number(),
+	items: SummaryEntry.array()
+})
+const StockCountEntry = z.object({
+	name: z.string(),
+	variant: z.string(),
+	opening: z.number().nullable(),
+	closing: z.number().nullable(),
+	collected: z.number(),
+	previous_closing: z.number().nullable()
+})
+const StockCounts = z.object({
+	date: z.string(),
+	entries: StockCountEntry.array()
 })
 const SalePeriod = z.object({
 	id: z.string(),
@@ -246,7 +280,11 @@ const SalePeriod = z.object({
 
 export type Order = z.infer<typeof Order>
 export type StoreClosure = z.infer<typeof StoreClosure>
+export type SummaryEntry = z.infer<typeof SummaryEntry>
 export type OrderSummary = z.infer<typeof OrderSummary>
+export type CollectionDay = z.infer<typeof CollectionDay>
+export type StockCountEntry = z.infer<typeof StockCountEntry>
+export type StockCounts = z.infer<typeof StockCounts>
 export type SalePeriod = z.infer<typeof SalePeriod>
 
 export default {

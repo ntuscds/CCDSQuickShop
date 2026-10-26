@@ -105,6 +105,9 @@ func (s *Server) HTTPMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/v0/sales", s.SaveSalePeriod)
 	mux.HandleFunc("DELETE /api/v0/closures/{id}", s.DeleteStoreClosure)
 	mux.HandleFunc("GET /api/v0/sales/{sale_id}/order_summary", s.OrderSummary)
+	mux.HandleFunc("GET /api/v0/sales/{sale_id}/collection_summary", s.CollectionSummary)
+	mux.HandleFunc("GET /api/v0/sales/{sale_id}/stock_counts/{date}", s.StockCounts)
+	mux.HandleFunc("POST /api/v0/sales/{sale_id}/stock_counts/{date}", s.SaveStockCounts)
 	mux.Handle("/api/", http.NotFoundHandler())
 	if s.Config.ImageDir != "" {
 		mux.Handle("GET /content/", http.StripPrefix("/content/", noDirListing(http.FileServer(http.Dir(s.Config.ImageDir)))))

@@ -1,4 +1,4 @@
-import type { OrderSummary } from '$lib/api'
+import type { SummaryEntry } from '$lib/api'
 
 type Table = {
 	name: string
@@ -16,10 +16,10 @@ type TableRow = {
 	data: number[]
 }
 
-export const constructTables = (summary: OrderSummary): Table[] => {
-	const variants = productVariants(summary)
+export const constructTables = (entries: SummaryEntry[]): Table[] => {
+	const variants = productVariants(entries)
 	const productGroups = findProductGroups(variants)
-	return productGroups.map((group) => constructTable(group, variants, summary))
+	return productGroups.map((group) => constructTable(group, variants, entries))
 }
 
 type ProductName = string
@@ -30,10 +30,10 @@ type SourceRowEntry = {
 	count: number
 }
 
-const productVariants = (summary: OrderSummary): Record<ProductName, ProductVariant> => {
+const productVariants = (entries: SummaryEntry[]): Record<ProductName, ProductVariant> => {
 	// Black, L and White, XL should generate [Black, White], [L, XL].
 	const productVariants: Record<string, string[][]> = {}
-	summary.unfulfilled.forEach((x) => {
+	entries.forEach((x) => {
 		const variantEntries = x.variant.split(',').map((v) => v.trim())
 		if (!(x.name in productVariants)) {
 			productVariants[x.name] = variantEntries.map((v) => [v])
@@ -89,10 +89,10 @@ const findProductGroups = (
 }
 
 const relevantEntriesForProducts = (
-	summary: OrderSummary,
+	entries: SummaryEntry[],
 	products: ProductName[]
 ): SourceRowEntry[] =>
-	summary.unfulfilled
+	entries
 		.filter((x) => products.includes(x.name))
 		.map((x) => ({
 			product: x.name,
@@ -121,11 +121,11 @@ const variantSort = (a: string, b: string) => {
 const constructTable = (
 	group: ProductName[],
 	variants: Record<ProductName, ProductVariant>,
-	summary: OrderSummary
+	summaryEntries: SummaryEntry[]
 ): Table => {
 	const name = group.join(', ')
 	const variant = combineVariants(group, variants)
-	const entries = relevantEntriesForProducts(summary, group)
+	const entries = relevantEntriesForProducts(summaryEntries, group)
 	// Columns of [A,B], [1,2,3,4,5] will look like:
 	//   A    B
 	// 1234512345

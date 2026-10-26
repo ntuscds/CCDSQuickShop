@@ -1,8 +1,8 @@
 <script lang="ts">
 	import api, { type OrderSummary } from '$lib/api'
 	import Button from '$lib/Button.svelte'
-	import { constructTables } from './summary'
 	import ErrorBoundary from '$lib/ErrorBoundary.svelte'
+	import SummaryTables from './SummaryTables.svelte'
 
 	interface Props {
 		searchOrder: (phrase: string) => void
@@ -34,10 +34,6 @@
 	)
 
 	const search = (label: string) => () => searchOrder(label)
-	const summaryTables = $derived.by(() => {
-		if (!summary) return []
-		return constructTables(summary)
-	})
 </script>
 
 <div class="flex flex-col gap-4">
@@ -81,47 +77,6 @@
 			{showCollected ? 'Sold' : 'Unfulfilled'}
 			Items
 		</h2>
-		{#each summaryTables as tbl}
-			<h3 class="mt-4 text-lg">{tbl.name}</h3>
-			<table>
-				{#if tbl.columns}
-					<thead>
-						{#each tbl.columns as colRow}
-							<tr>
-								<th></th>
-								{#each colRow as col}
-									<th colspan={col.span}>{col.label}</th>
-								{/each}
-							</tr>
-						{/each}
-					</thead>
-				{/if}
-				<tbody>
-					{#each tbl.rows as row}
-						<tr>
-							<td class="font-bold">{row.label}</td>
-							{#each row.data as num, i}
-								<td onclick={search(row.fullLabels[i])}>
-									{#if num}{num}{:else}-{/if}
-								</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{/each}
+		<SummaryTables entries={summary?.unfulfilled ?? []} {searchOrder} />
 	</div>
 </div>
-
-<style lang="postcss">
-	table {
-		@apply w-fit;
-	}
-	td,
-	th {
-		@apply border border-black px-2 text-center;
-	}
-	tbody tr:nth-child(2n + 1) {
-		@apply bg-gray-300;
-	}
-</style>
